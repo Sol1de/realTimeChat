@@ -23,7 +23,7 @@ Chat RealTime est conçu pour offrir une communication en temps réel simple et 
 
 1. Clonez le dépôt :
     ```bash
-    git clone <url-du-repo>
+    git clone git@github.com:Sol1de/realTimeChat.git
     ```
 
 2. Accédez au répertoire du projet :
@@ -64,10 +64,6 @@ Chat RealTime est conçu pour offrir une communication en temps réel simple et 
 L'application est déployée sur Render et accessible à l'adresse suivante :
 
 🔗 [Lien du déploiement](https://realtimechat-o3iy.onrender.com)
-
-## Contributions
-
-Les contributions sont les bienvenues ! Veuillez soumettre des pull requests ou signaler des problèmes pour toute amélioration.
 
 ---
 
