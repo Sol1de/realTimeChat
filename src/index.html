@@ -362,7 +362,7 @@
                 const safeContent = content || '';
                 const safeUsername = username || 'Utilisateur';
                 const safeUserId = userId || null;
-                const safeId = id || Date.now();
+                const safeId = id || Date.now().toString();
                 
                 const isOwnMessage = safeUserId === currentUserId;
                 
@@ -444,6 +444,12 @@
                     timestamp: new Date().toISOString(),
                     id: serverOffset
                 } : messageData;
+
+                // Vérifier si le message existe déjà pour éviter les doublons
+                const existingMessage = document.querySelector(`[data-id="${data.id}"]`);
+                if (existingMessage) {
+                    return; // Message déjà affiché, ne pas l'ajouter
+                }
 
                 const messageElement = createMessage(data);
                 messages.appendChild(messageElement);
