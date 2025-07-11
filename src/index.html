@@ -81,12 +81,11 @@
             .messages-list {
                 display: flex;
                 flex-direction: column;
-                gap: 1rem;
                 padding: 0;
                 margin: 0;
                 list-style: none;
             }
-
+            
             /* Message Bubble */
             .message {
                 display: flex;
@@ -94,6 +93,18 @@
                 gap: 0.75rem;
                 max-width: 70%;
                 animation: fadeIn 0.3s ease-in-out;
+                margin-bottom: 10px;
+            }
+
+            .message-group-continuation {
+                margin-left: 48px;
+                margin-bottom: 10px;
+            }
+            
+            .message.own.message-group-continuation {
+                margin-right: 48px;
+                margin-left: 0;
+                margin-bottom: 10px;
             }
 
             .message.own {
@@ -366,26 +377,63 @@
                 
                 const isOwnMessage = safeUserId === currentUserId;
                 
-                const messageElement = document.createElement('li');
-                messageElement.className = isOwnMessage ? 'message own' : 'message';
-                messageElement.setAttribute('data-id', safeId);
+                let lastMessageElement = messages.lastElementChild;
+                let lastUserId = lastMessageElement ? lastMessageElement.getAttribute('data-user-id') : null;
+                let lastTimestamp = lastMessageElement ? lastMessageElement.getAttribute('data-timestamp') : null;
+                let lastMinute = lastTimestamp ? new Date(lastTimestamp).getMinutes() : null;
+                let currentMinute = new Date(timestamp || Date.now()).getMinutes();
                 
+                const isNewGroup = !lastMessageElement || lastUserId !== safeUserId.toString() || lastMinute !== currentMinute;
+                
+                const messageGroupClass = isNewGroup ? 'message-group-start' : 'message-group-continuation';
+                const messageElement = document.createElement('li');
+                messageElement.className = `message ${isOwnMessage ? 'own' : ''} ${messageGroupClass}`;
+                messageElement.setAttribute('data-id', safeId);
+                messageElement.setAttribute('data-user-id', safeUserId.toString());
+                messageElement.setAttribute('data-timestamp', timestamp || new Date().toISOString());
+
                 const avatarColor = generateAvatarColor(safeUsername);
                 const initials = getInitials(safeUsername);
                 const time = formatTime(timestamp || new Date());
                 
                 messageElement.innerHTML = `
-                    <div class="message-avatar" style="background-color: ${avatarColor}">
-                        ${initials}
-                    </div>
+                    ${isNewGroup ? `<div class="message-avatar" style="background-color: ${avatarColor}">${initials}</div>` : ''}
                     <div class="message-content">
-                        <div class="message-username">${safeUsername}</div>
+                        ${isNewGroup ? `<div class="message-username">${safeUsername}</div>` : ''}
                         <div class="message-bubble">${safeContent}</div>
-                        <div class="message-time">${time}</div>
                     </div>
                 `;
                 
                 return messageElement;
+            }
+            
+            // Fonction pour mettre à jour l'affichage de l'heure du dernier message d'un groupe
+            function updateGroupTimeDisplay() {
+                const allMessages = messages.querySelectorAll('.message');
+                
+                // Supprimer toutes les heures existantes
+                allMessages.forEach(msg => {
+                    const timeElement = msg.querySelector('.message-time');
+                    if (timeElement) {
+                        timeElement.remove();
+                    }
+                });
+                
+                // Ajouter l'heure au dernier message de chaque groupe
+                for (let i = 0; i < allMessages.length; i++) {
+                    const currentMessage = allMessages[i];
+                    const nextMessage = allMessages[i + 1];
+                    
+                    // Si c'est le dernier message ou si le message suivant est le début d'un nouveau groupe
+                    if (!nextMessage || nextMessage.classList.contains('message-group-start')) {
+                        const timestamp = currentMessage.getAttribute('data-timestamp');
+                        const time = formatTime(timestamp);
+                        const timeElement = document.createElement('div');
+                        timeElement.className = 'message-time';
+                        timeElement.textContent = time;
+                        currentMessage.querySelector('.message-content').appendChild(timeElement);
+                    }
+                }
             }
 
             // Fonction pour faire défiler vers le bas
@@ -453,6 +501,7 @@
 
                 const messageElement = createMessage(data);
                 messages.appendChild(messageElement);
+                updateGroupTimeDisplay();
                 scrollToBottom();
             });
 
