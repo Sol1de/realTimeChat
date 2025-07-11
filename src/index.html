@@ -441,15 +441,19 @@
                 let data;
                 // Gérer les anciens messages (string) et les nouveaux (object)
                 if (typeof messageData === 'string') {
+                    // Ancien format - ne devrait plus arriver avec le nouveau serveur
                     data = {
                         content: messageData,
-                        username: 'Utilisateur',
+                        username: 'Utilisateur Ancien',
                         timestamp: new Date().toISOString(),
                         id: serverOffset
                     };
                 } else {
+                    // Nouveau format - objet avec toutes les propriétés
                     data = messageData;
                 }
+                
+                console.log('Message reçu:', data); // Debug
                 
                 const messageElement = createMessage(data);
                 messages.appendChild(messageElement);

@@ -48,7 +48,7 @@ if (cluster.isPrimary) {
     
     // Middleware pour partager les sessions entre Express et Socket.IO
     io.use((socket, next) => {
-        sessionMiddleware(socket.request, {}, next);
+        sessionMiddleware(socket.request, socket.request.res || {}, next);
     });
     const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -165,19 +165,26 @@ if (cluster.isPrimary) {
         });
         socket.on('chat message', async (msg, clientOffset, callback) => {
             let result;
+            let userId, username;
             try {
                 // Récupérer l'utilisateur depuis la session Socket.IO
                 const session = socket.request.session;
+                console.log('Session Socket.IO:', session); // Debug
+                
                 if (!session || !session.userId) {
                     console.error('Session non trouvée ou utilisateur non connecté');
+                    console.log('Session disponible:', !!session);
+                    console.log('UserId dans session:', session?.userId);
                     return;
                 }
                 
-                const userId = session.userId;
-                const username = session.username;
+                userId = session.userId;
+                username = session.username;
+                console.log('Utilisateur envoyant message:', { userId, username }); // Debug
                 
                 result = await db.run('INSERT INTO messages (content, client_offset, user_id) VALUES (?, ?, ?)', msg, clientOffset, userId);
             } catch (e) {
+                console.error('Erreur lors de l\'insertion du message:', e);
                 if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
                     // the message was already inserted, so we notify the client
                     callback();
@@ -186,14 +193,20 @@ if (cluster.isPrimary) {
                 }
                 return;
             }
-            // include the offset with the message and username
-            io.emit('chat message', {
+            
+            // Créer l'objet message à envoyer
+            const messageObject = {
                 content: msg,
-                username: session.username,
-                userId: session.userId,
+                username: username,
+                userId: userId,
                 id: result.lastID,
                 timestamp: new Date().toISOString()
-            });
+            };
+            
+            console.log('Message à envoyer:', messageObject); // Debug
+            
+            // include the offset with the message and username
+            io.emit('chat message', messageObject);
             // acknowledge the event
             callback();
         });
