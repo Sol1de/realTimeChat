@@ -1,31 +1,319 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
     <head>
+        <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width,initial-scale=1.0">
-        <title>Socket.IO chat</title>
+        <title>Chat RealTime</title>
         <style>
-            body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
 
-            #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
-            #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
-            #input:focus { outline: none; }
-            #form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                background-color: #ffffff;
+                color: #000000;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+            }
 
-            #messages { list-style-type: none; margin: 0; padding: 0; }
-            #messages > li { padding: 0.5rem 1rem; }
-            #messages > li:nth-child(odd) { background: #efefef; }
+            /* Header */
+            .chat-header {
+                background: #ffffff;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 1rem 1.5rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+            }
+
+            .chat-title {
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: #000000;
+            }
+
+            .header-buttons {
+                display: flex;
+                gap: 0.5rem;
+            }
+
+            .header-btn {
+                padding: 0.5rem 1rem;
+                border: 1px solid #d1d5db;
+                background: #ffffff;
+                color: #374151;
+                border-radius: 6px;
+                font-size: 0.875rem;
+                cursor: pointer;
+                transition: all 0.15s ease-in-out;
+            }
+
+            .header-btn:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+
+            .header-btn.disconnect {
+                background: #dc2626;
+                color: #ffffff;
+                border-color: #dc2626;
+            }
+
+            .header-btn.disconnect:hover {
+                background: #b91c1c;
+            }
+
+            /* Messages Container */
+            .messages-container {
+                flex: 1;
+                overflow-y: auto;
+                padding: 1rem;
+                background: #ffffff;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .messages-list {
+                display: flex;
+                flex-direction: column;
+                padding: 0;
+                margin: 0;
+                list-style: none;
+            }
+            
+            /* Message Bubble */
+            .message {
+                display: flex;
+                align-items: flex-start;
+                gap: 0.75rem;
+                max-width: 70%;
+                animation: fadeIn 0.3s ease-in-out;
+                margin-bottom: 10px;
+            }
+
+            .message-group-continuation {
+                margin-left: 48px;
+                margin-bottom: 10px;
+            }
+            
+            .message.own.message-group-continuation {
+                margin-right: 48px;
+                margin-left: 0;
+                margin-bottom: 10px;
+            }
+
+            .message.own {
+                align-self: flex-end;
+                flex-direction: row-reverse;
+            }
+
+            .message-avatar {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 600;
+                font-size: 0.875rem;
+                color: #ffffff;
+                flex-shrink: 0;
+            }
+
+            .message-content {
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+
+            .message.own .message-content {
+                align-items: flex-end;
+            }
+
+            .message-username {
+                font-size: 0.75rem;
+                font-weight: 500;
+                color: #6b7280;
+            }
+
+            .message-bubble {
+                background: #f3f4f6;
+                border: 1px solid #e5e7eb;
+                border-radius: 18px;
+                padding: 0.75rem 1rem;
+                color: #000000;
+                font-size: 0.875rem;
+                line-height: 1.4;
+                word-wrap: break-word;
+                box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            }
+
+            .message.own .message-bubble {
+                background: #000000;
+                color: #ffffff;
+                border-color: #000000;
+            }
+
+            .message-time {
+                font-size: 0.625rem;
+                color: #9ca3af;
+                margin-top: 0.25rem;
+            }
+
+            /* Input Form */
+            .chat-input {
+                background: #ffffff;
+                border-top: 1px solid #e5e7eb;
+                padding: 1rem 1.5rem;
+                display: flex;
+                gap: 0.75rem;
+                align-items: center;
+                box-shadow: 0 -1px 3px 0 rgb(0 0 0 / 0.1);
+            }
+
+            .input-wrapper {
+                flex: 1;
+                position: relative;
+            }
+
+            .chat-input-field {
+                width: 100%;
+                padding: 0.75rem 1rem;
+                border: 1px solid #d1d5db;
+                border-radius: 24px;
+                font-size: 0.875rem;
+                background-color: #ffffff;
+                color: #000000;
+                outline: none;
+                transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+            }
+
+            .chat-input-field:focus {
+                border-color: #000000;
+                box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+            }
+
+            .chat-input-field::placeholder {
+                color: #9ca3af;
+            }
+
+            .send-button {
+                padding: 0.75rem 1.5rem;
+                background-color: #000000;
+                color: #ffffff;
+                border: none;
+                border-radius: 24px;
+                font-size: 0.875rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: background-color 0.15s ease-in-out;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .send-button:hover {
+                background-color: #374151;
+            }
+
+            .send-button:disabled {
+                background-color: #9ca3af;
+                cursor: not-allowed;
+            }
+
+            /* Animations */
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            /* Scrollbar Styling */
+            .messages-container::-webkit-scrollbar {
+                width: 6px;
+            }
+
+            .messages-container::-webkit-scrollbar-track {
+                background: #f1f1f1;
+                border-radius: 3px;
+            }
+
+            .messages-container::-webkit-scrollbar-thumb {
+                background: #c1c1c1;
+                border-radius: 3px;
+            }
+
+            .messages-container::-webkit-scrollbar-thumb:hover {
+                background: #a1a1a1;
+            }
+
+            /* Responsive */
+            @media (max-width: 768px) {
+                .message {
+                    max-width: 85%;
+                }
+                
+                .chat-header {
+                    padding: 1rem;
+                }
+                
+                .chat-input {
+                    padding: 1rem;
+                }
+                
+                .messages-container {
+                    padding: 0.5rem;
+                }
+            }
         </style>
     </head>
     <body>
-        <ul id="messages"></ul>
-        <form id="form" action="">
-            <input id="input" autocomplete="off" /><button>Send</button>
-            <button id="toggle-btn">Disconnect</button>
+        <div class="chat-header">
+            <h1 class="chat-title">Chat RealTime</h1>
+            <div class="header-buttons">
+                <button class="header-btn" id="toggle-btn">Déconnecter</button>
+                <button class="header-btn" id="logout-btn">Se déconnecter</button>
+            </div>
+        </div>
+        
+        <div class="messages-container">
+            <ul class="messages-list" id="messages"></ul>
+        </div>
+        
+        <form class="chat-input" id="form">
+            <div class="input-wrapper">
+                <input 
+                    type="text" 
+                    id="input" 
+                    class="chat-input-field" 
+                    placeholder="Tapez votre message..."
+                    autocomplete="off"
+                />
+            </div>
+            <button type="submit" class="send-button" id="send-button">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m22 2-7 20-4-9-9-4z"/>
+                    <path d="M22 2 11 13"/>
+                </svg>
+                Envoyer
+            </button>
         </form>
 
         <script src="/socket.io/socket.io.js"></script>
         <script>
             let counter = 0;
+            let currentUserId = null; // Sera défini par le serveur
+            let currentUsername = null; // Sera défini par le serveur
 
             const socket = io({
                 auth: {
@@ -40,34 +328,212 @@
             const input = document.getElementById('input');
             const messages = document.getElementById('messages');
             const toggleButton = document.getElementById('toggle-btn');
+            const logoutButton = document.getElementById('logout-btn');
 
+            // Fonction pour générer une couleur d'avatar basée sur le nom d'utilisateur
+            function generateAvatarColor(username) {
+                const colors = [
+                    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
+                    '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
+                    '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
+                    '#ec4899', '#f43f5e'
+                ];
+                if (!username || typeof username !== 'string') {
+                    return colors[0]; // Couleur par défaut
+                }
+                let hash = 0;
+                for (let i = 0; i < username.length; i++) {
+                    hash = username.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                return colors[Math.abs(hash) % colors.length];
+            }
+
+            // Fonction pour obtenir les initiales d'un nom d'utilisateur
+            function getInitials(username) {
+                if (!username || typeof username !== 'string') {
+                    return '??';
+                }
+                return username.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+            }
+
+            // Fonction pour formater l'heure
+            function formatTime(timestamp) {
+                const date = new Date(timestamp);
+                return date.toLocaleTimeString('fr-FR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+            }
+
+            // Fonction pour créer un message
+            function createMessage(messageData) {
+                const { content, username, timestamp, id, userId } = messageData;
+                
+                // Valeurs par défaut pour éviter les erreurs
+                const safeContent = content || '';
+                const safeUsername = username || 'Utilisateur';
+                const safeUserId = userId || null;
+                const safeId = id || Date.now().toString();
+                
+                const isOwnMessage = safeUserId === currentUserId;
+                
+                let lastMessageElement = messages.lastElementChild;
+                let lastUserId = lastMessageElement ? lastMessageElement.getAttribute('data-user-id') : null;
+                let lastTimestamp = lastMessageElement ? lastMessageElement.getAttribute('data-timestamp') : null;
+                let lastMinute = lastTimestamp ? new Date(lastTimestamp).getMinutes() : null;
+                let currentMinute = new Date(timestamp || Date.now()).getMinutes();
+                
+                const isNewGroup = !lastMessageElement || lastUserId !== safeUserId.toString() || lastMinute !== currentMinute;
+                
+                const messageGroupClass = isNewGroup ? 'message-group-start' : 'message-group-continuation';
+                const messageElement = document.createElement('li');
+                messageElement.className = `message ${isOwnMessage ? 'own' : ''} ${messageGroupClass}`;
+                messageElement.setAttribute('data-id', safeId);
+                messageElement.setAttribute('data-user-id', safeUserId.toString());
+                messageElement.setAttribute('data-timestamp', timestamp || new Date().toISOString());
+
+                const avatarColor = generateAvatarColor(safeUsername);
+                const initials = getInitials(safeUsername);
+                const time = formatTime(timestamp || new Date());
+                
+                messageElement.innerHTML = `
+                    ${isNewGroup ? `<div class="message-avatar" style="background-color: ${avatarColor}">${initials}</div>` : ''}
+                    <div class="message-content">
+                        ${isNewGroup ? `<div class="message-username">${safeUsername}</div>` : ''}
+                        <div class="message-bubble">${safeContent}</div>
+                    </div>
+                `;
+                
+                return messageElement;
+            }
+            
+            // Fonction pour mettre à jour l'affichage de l'heure du dernier message d'un groupe
+            function updateGroupTimeDisplay() {
+                const allMessages = messages.querySelectorAll('.message');
+                
+                // Supprimer toutes les heures existantes
+                allMessages.forEach(msg => {
+                    const timeElement = msg.querySelector('.message-time');
+                    if (timeElement) {
+                        timeElement.remove();
+                    }
+                });
+                
+                // Ajouter l'heure au dernier message de chaque groupe
+                for (let i = 0; i < allMessages.length; i++) {
+                    const currentMessage = allMessages[i];
+                    const nextMessage = allMessages[i + 1];
+                    
+                    // Si c'est le dernier message ou si le message suivant est le début d'un nouveau groupe
+                    if (!nextMessage || nextMessage.classList.contains('message-group-start')) {
+                        const timestamp = currentMessage.getAttribute('data-timestamp');
+                        const time = formatTime(timestamp);
+                        const timeElement = document.createElement('div');
+                        timeElement.className = 'message-time';
+                        timeElement.textContent = time;
+                        currentMessage.querySelector('.message-content').appendChild(timeElement);
+                    }
+                }
+            }
+
+            // Fonction pour faire défiler vers le bas
+            function scrollToBottom() {
+                const messagesContainer = document.querySelector('.messages-container');
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            // Gestionnaire de connexion/déconnexion Socket.IO
             toggleButton.addEventListener('click', (e) => {
                 e.preventDefault();
                 if (socket.connected) {
-                    toggleButton.innerText = 'Connect';
+                    toggleButton.innerText = 'Connecter';
+                    toggleButton.classList.add('disconnect');
                     socket.disconnect();
                 } else {
-                    toggleButton.innerText = 'Disconnect';
+                    toggleButton.innerText = 'Déconnecter';
+                    toggleButton.classList.remove('disconnect');
                     socket.connect();
                 }
             });
 
-            form.addEventListener('submit', (e) => {
+            // Gestionnaire de déconnexion utilisateur
+            logoutButton.addEventListener('click', async (e) => {
                 e.preventDefault();
-                if (input.value) {
-                    // compute a unique offset
-                    const clientOffset = `${socket.id}-${counter++}`;
-                    socket.emit('chat message', input.value, clientOffset);
-                    input.value = '';
+                try {
+                    const response = await fetch('/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    if (response.ok) {
+                        window.location.href = '/login';
+                    }
+                } catch (error) {
+                    console.error('Erreur lors de la déconnexion:', error);
                 }
             });
 
-            socket.on('chat message', (msg, serverOffset) => {
-                const item = document.createElement('li');
-                item.textContent = msg;
-                messages.appendChild(item);
-                window.scrollTo(0, document.body.scrollHeight);
-                socket.auth.serverOffset = serverOffset;
+            // Gestionnaire de soumission du formulaire
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                if (input.value.trim()) {
+                    // Utiliser timestamp pour éviter les doublons lors des reconnexions
+                    const clientOffset = `${socket.id}-${counter++}-${Date.now()}`;
+                    socket.emit('chat message', input.value.trim(), clientOffset);
+                    input.value = '';
+                }
+            });
+            // Réception des messages
+            socket.on('chat message', (messageData, serverOffset) => {
+                const data = typeof messageData === 'string' ? {
+                    content: messageData,
+                    username: 'Utilisateur Ancien',
+                    timestamp: new Date().toISOString(),
+                    id: serverOffset
+                } : messageData;
+
+                // Vérifier si le message existe déjà pour éviter les doublons
+                const existingMessage = document.querySelector(`[data-id="${data.id}"]`);
+                if (existingMessage) {
+                    return; // Message déjà affiché, ne pas l'ajouter
+                }
+
+                const messageElement = createMessage(data);
+                messages.appendChild(messageElement);
+                updateGroupTimeDisplay();
+                scrollToBottom();
+            });
+
+            // Indicateurs de connexion
+            socket.on('connect', () => {
+                toggleButton.innerText = 'Déconnecter';
+                toggleButton.classList.remove('disconnect');
+            });
+
+            socket.on('disconnect', () => {
+                toggleButton.innerText = 'Connecter';
+                toggleButton.classList.add('disconnect');
+            });
+
+            // Récupérer les informations utilisateur au chargement
+            async function loadUserInfo() {
+                try {
+                    const response = await fetch('/user-info');
+                    if (response.ok) {
+                        const userInfo = await response.json();
+                        currentUserId = userInfo.userId;
+                        currentUsername = userInfo.username;
+                    }
+                } catch (error) {
+                    console.error('Erreur lors du chargement des informations utilisateur:', error);
+                }
+            }
+            
+            // Scroll initial
+            window.addEventListener('load', async () => {
+                await loadUserInfo();
+                scrollToBottom();
             });
         </script>
     </body>
