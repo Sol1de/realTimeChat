@@ -8,7 +8,7 @@ import { open } from 'sqlite';
 import session from 'express-session';
 import dotenv from 'dotenv';
 
-// Charger les variables d'environnement
+// Env variables
 dotenv.config();
 
 const app = express();
@@ -30,7 +30,6 @@ const io = new Server(server, {
     connectionStateRecovery: {}
 });
 
-// Middleware pour partager les sessions entre Express et Socket.IO
 io.use((socket, next) => {
     const res = {
         getHeader: () => {},
@@ -43,13 +42,11 @@ io.use((socket, next) => {
     sessionMiddleware(socket.request, res, next);
 });
 
-// Ouvrir la base de données
 const db = await open({
     filename: process.env.DATABASE_FILE || 'chat.db',
     driver: sqlite3.Database
 });
 
-// Créer les tables
 await db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,11 +62,9 @@ await db.exec(`
     );
 `);
 
-// Middleware pour parser JSON
 app.use(express.json());
 app.use(sessionMiddleware);
 
-// Middleware pour vérifier l'authentification
 const requireAuth = (req, res, next) => {
     if (req.session && req.session.userId) {
         return next();
@@ -140,7 +135,6 @@ app.get('/', requireAuth, (req, res) => {
 io.on('connection', async (socket) => {
     socket.on('chat message', async (msg, clientOffset, callback) => {
         try {
-            // Recharger la session avant chaque message
             await new Promise((resolve) => {
                 sessionMiddleware(socket.request, socket.request.res || {}, resolve);
             });
@@ -172,8 +166,7 @@ io.on('connection', async (socket) => {
             }
         }
     });
-    
-    // Récupérer les messages manqués
+
     if (!socket.recovered) {
         try {
             await db.each(
@@ -192,13 +185,11 @@ io.on('connection', async (socket) => {
                     }, row.id);
                 }
             );
-        } catch (e) {
-            // Erreur lors de la récupération des messages
-        }
+        } catch (e) {}
     }
 });
 
-// Démarrer le serveur
+// launch serve
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
