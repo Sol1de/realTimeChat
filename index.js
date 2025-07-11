@@ -29,10 +29,26 @@ if (cluster.isPrimary) {
 } else {
     const app = express();
     const server = createServer(app);
+    const sessionMiddleware = session({
+        secret: process.env.SESSION_SECRET || 'fallback-secret-key-please-change-in-production',
+        resave: false,
+        saveUninitialized: false,
+        cookie: {
+            secure: process.env.COOKIE_SECURE === 'true', // true en production avec HTTPS
+            httpOnly: process.env.COOKIE_HTTP_ONLY !== 'false', // true par défaut
+            maxAge: parseInt(process.env.SESSION_MAX_AGE) || 24 * 60 * 60 * 1000 // 24 heures par défaut
+        }
+    });
+    
     const io = new Server(server,  {
         connectionStateRecovery: {},
         // set up the adapter on each worker thread
         adapter: createAdapter()
+    });
+    
+    // Middleware pour partager les sessions entre Express et Socket.IO
+    io.use((socket, next) => {
+        sessionMiddleware(socket.request, {}, next);
     });
     const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -47,7 +63,9 @@ if (cluster.isPrimary) {
       CREATE TABLE IF NOT EXISTS messages (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           client_offset TEXT UNIQUE,
-          content TEXT
+          content TEXT,
+          user_id INTEGER,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
       );
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,17 +77,8 @@ if (cluster.isPrimary) {
     // Middleware pour parser JSON
     app.use(express.json());
     
-    // Configuration des sessions
-    app.use(session({
-        secret: process.env.SESSION_SECRET || 'fallback-secret-key-please-change-in-production',
-        resave: false,
-        saveUninitialized: false,
-        cookie: {
-            secure: process.env.COOKIE_SECURE === 'true', // true en production avec HTTPS
-            httpOnly: process.env.COOKIE_HTTP_ONLY !== 'false', // true par défaut
-            maxAge: parseInt(process.env.SESSION_MAX_AGE) || 24 * 60 * 60 * 1000 // 24 heures par défaut
-        }
-    }));
+    // Utiliser le middleware de session déjà créé
+    app.use(sessionMiddleware);
     
     // Middleware pour vérifier l'authentification
     const requireAuth = (req, res, next) => {
@@ -136,6 +145,14 @@ if (cluster.isPrimary) {
         }
     });
 
+    // Route pour récupérer les informations utilisateur
+    app.get('/user-info', requireAuth, (req, res) => {
+        res.json({
+            userId: req.session.userId,
+            username: req.session.username
+        });
+    });
+    
     // Route protégée pour la page de chat
     app.get('/', requireAuth, (req, res) => {
         res.sendFile(join(__dirname, 'src/index.html'));
@@ -149,7 +166,17 @@ if (cluster.isPrimary) {
         socket.on('chat message', async (msg, clientOffset, callback) => {
             let result;
             try {
-                result = await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
+                // Récupérer l'utilisateur depuis la session Socket.IO
+                const session = socket.request.session;
+                if (!session || !session.userId) {
+                    console.error('Session non trouvée ou utilisateur non connecté');
+                    return;
+                }
+                
+                const userId = session.userId;
+                const username = session.username;
+                
+                result = await db.run('INSERT INTO messages (content, client_offset, user_id) VALUES (?, ?, ?)', msg, clientOffset, userId);
             } catch (e) {
                 if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
                     // the message was already inserted, so we notify the client
@@ -159,18 +186,33 @@ if (cluster.isPrimary) {
                 }
                 return;
             }
-            // include the offset with the message
-            io.emit('chat message', msg, result.lastID);
+            // include the offset with the message and username
+            io.emit('chat message', {
+                content: msg,
+                username: session.username,
+                userId: session.userId,
+                id: result.lastID,
+                timestamp: new Date().toISOString()
+            });
             // acknowledge the event
             callback();
         });
         if (!socket.recovered) {
             // if the connection state recovery was not successful
             try {
-                await db.each('SELECT id, content FROM messages WHERE id > ?',
+                await db.each(`SELECT m.id, m.content, m.timestamp, u.username, u.id as userId 
+                              FROM messages m 
+                              LEFT JOIN users u ON m.user_id = u.id 
+                              WHERE m.id > ?`,
                     [socket.handshake.auth.serverOffset || 0],
                     (_err, row) => {
-                        socket.emit('chat message', row.content, row.id);
+                        socket.emit('chat message', {
+                            content: row.content,
+                            username: row.username || 'Utilisateur',
+                            userId: row.userId,
+                            timestamp: row.timestamp || new Date().toISOString(),
+                            id: row.id
+                        }, row.id);
                     }
                 )
             } catch (e) {
