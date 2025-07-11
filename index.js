@@ -5,253 +5,201 @@ import { dirname, join } from 'node:path';
 import { Server } from 'socket.io';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
-import { availableParallelism } from 'node:os';
-import cluster from 'node:cluster';
-import { createAdapter, setupPrimary } from '@socket.io/cluster-adapter';
 import session from 'express-session';
 import dotenv from 'dotenv';
 
 // Charger les variables d'environnement
 dotenv.config();
 
-// Désactiver temporairement le clustering pour débugger la session
-if (false && cluster.isPrimary) {
-    const numCPUs = availableParallelism();
-    const basePort = parseInt(process.env.PORT) || 3000;
-    // create one worker per available core
-    for (let i = 0; i < numCPUs; i++) {
-        cluster.fork({
-            PORT: basePort + i
-        });
+const app = express();
+const server = createServer(app);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const sessionMiddleware = session({
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key-please-change-in-production',
+    resave: true,
+    saveUninitialized: true,
+    cookie: {
+        secure: process.env.COOKIE_SECURE === 'true',
+        httpOnly: process.env.COOKIE_HTTP_ONLY !== 'false',
+        maxAge: parseInt(process.env.SESSION_MAX_AGE) || 24 * 60 * 60 * 1000
     }
+});
 
-    // set up the adapter on the primary thread
-    setupPrimary();
-} else {
-    const app = express();
-    const server = createServer(app);
-    const sessionMiddleware = session({
-        secret: process.env.SESSION_SECRET || 'fallback-secret-key-please-change-in-production',
-        resave: true,  // Force resave pour Socket.IO
-        saveUninitialized: true,  // Force save pour Socket.IO
-        cookie: {
-            secure: process.env.COOKIE_SECURE === 'true', // true en production avec HTTPS
-            httpOnly: process.env.COOKIE_HTTP_ONLY !== 'false', // true par défaut
-            maxAge: parseInt(process.env.SESSION_MAX_AGE) || 24 * 60 * 60 * 1000 // 24 heures par défaut
-        }
-    });
-    
-    const io = new Server(server,  {
-        connectionStateRecovery: {}
-    });
-    
-    // Middleware pour partager les sessions entre Express et Socket.IO
-    io.use((socket, next) => {
-        // Créer un objet response factice complet pour le middleware de session
-        const res = {
-            getHeader: () => {},
-            setHeader: () => {},
-            clearCookie: () => {},
-            writeHead: () => {},
-            end: () => {},
-            cookie: () => {}
-        };
-        
-        sessionMiddleware(socket.request, res, next);
-    });
-    const __dirname = dirname(fileURLToPath(import.meta.url));
+const io = new Server(server, {
+    connectionStateRecovery: {}
+});
 
-    // open the database file
-    const db = await open({
-        filename: process.env.DATABASE_FILE || 'chat.db',
-        driver: sqlite3.Database
-    });
-
-    // create our 'messages' table (you can ignore the 'client_offset' column for now)
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS messages (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          client_offset TEXT UNIQUE,
-          content TEXT,
-          user_id INTEGER,
-          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT
-        );
-`   );
-
-    // Middleware pour parser JSON
-    app.use(express.json());
-    
-    // Utiliser le middleware de session déjà créé
-    app.use(sessionMiddleware);
-    
-    // Middleware pour vérifier l'authentification
-    const requireAuth = (req, res, next) => {
-        if (req.session && req.session.userId) {
-            return next();
-        } else {
-            return res.redirect('/login');
-        }
+// Middleware pour partager les sessions entre Express et Socket.IO
+io.use((socket, next) => {
+    const res = {
+        getHeader: () => {},
+        setHeader: () => {},
+        clearCookie: () => {},
+        writeHead: () => {},
+        end: () => {},
+        cookie: () => {}
     };
-    
-    // Route pour servir la page de login
-    app.get('/login', (req, res) => {
-        // Si l'utilisateur est déjà connecté, rediriger vers le chat
-        if (req.session && req.session.userId) {
-            return res.redirect('/');
+    sessionMiddleware(socket.request, res, next);
+});
+
+// Ouvrir la base de données
+const db = await open({
+    filename: process.env.DATABASE_FILE || 'chat.db',
+    driver: sqlite3.Database
+});
+
+// Créer les tables
+await db.exec(`
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_offset TEXT UNIQUE,
+        content TEXT,
+        user_id INTEGER,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT
+    );
+`);
+
+// Middleware pour parser JSON
+app.use(express.json());
+app.use(sessionMiddleware);
+
+// Middleware pour vérifier l'authentification
+const requireAuth = (req, res, next) => {
+    if (req.session && req.session.userId) {
+        return next();
+    } else {
+        return res.redirect('/login');
+    }
+};
+
+// Routes
+app.get('/login', (req, res) => {
+    if (req.session && req.session.userId) {
+        return res.redirect('/');
+    }
+    res.sendFile(join(__dirname, 'src/login.html'));
+});
+
+app.post('/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ message: 'Erreur lors de la déconnexion' });
         }
-        res.sendFile(join(__dirname, 'src/login.html'));
+        res.json({ message: 'Déconnexion réussie' });
     });
+});
+
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
     
-    // Route pour se déconnecter
-    app.post('/logout', (req, res) => {
-        req.session.destroy((err) => {
-            if (err) {
-                return res.status(500).json({ message: 'Erreur lors de la déconnexion' });
-            }
-            res.json({ message: 'Déconnexion réussie' });
-        });
-    });
+    if (!username || !password) {
+        return res.status(400).json({ message: 'Nom d\'utilisateur et mot de passe requis' });
+    }
     
-    // Route pour gérer la soumission du formulaire de login
-    app.post('/login', async (req, res) => {
-        const { username, password } = req.body;
+    try {
+        const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
         
-        if (!username || !password) {
-            return res.status(400).json({ message: 'Nom d\'utilisateur et mot de passe requis' });
-        }
-        
-        try {
-            // Vérifier si l'utilisateur existe
-            const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
-            
-            if (user) {
-                // L'utilisateur existe, vérifier le mot de passe
-                if (user.password === password) {
-                    // Mot de passe correct - créer la session
-                    req.session.userId = user.id;
-                    req.session.username = user.username;
-                    res.json({ message: 'Connexion réussie', created: false });
-                } else {
-                    // Mot de passe incorrect
-                    res.status(401).json({ message: 'Mot de passe incorrect' });
-                }
+        if (user) {
+            if (user.password === password) {
+                req.session.userId = user.id;
+                req.session.username = user.username;
+                res.json({ message: 'Connexion réussie', created: false });
             } else {
-                // L'utilisateur n'existe pas, le créer
-                const result = await db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, password]);
-                // Créer la session pour le nouvel utilisateur
-                req.session.userId = result.lastID;
-                req.session.username = username;
-                res.json({ message: 'Compte créé avec succès', created: true });
+                res.status(401).json({ message: 'Mot de passe incorrect' });
             }
-        } catch (error) {
-            console.error('Erreur lors de la connexion:', error);
-            res.status(500).json({ message: 'Erreur interne du serveur' });
+        } else {
+            const result = await db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, password]);
+            req.session.userId = result.lastID;
+            req.session.username = username;
+            res.json({ message: 'Compte créé avec succès', created: true });
         }
-    });
+    } catch (error) {
+        console.error('Erreur lors de la connexion:', error);
+        res.status(500).json({ message: 'Erreur interne du serveur' });
+    }
+});
 
-    // Route pour récupérer les informations utilisateur
-    app.get('/user-info', requireAuth, (req, res) => {
-        res.json({
-            userId: req.session.userId,
-            username: req.session.username
-        });
+app.get('/user-info', requireAuth, (req, res) => {
+    res.json({
+        userId: req.session.userId,
+        username: req.session.username
     });
-    
-    // Route protégée pour la page de chat
-    app.get('/', requireAuth, (req, res) => {
-        res.sendFile(join(__dirname, 'src/index.html'));
-    });
+});
 
-    io.on('connection', async (socket) => {
-        console.log('a user connected');
-        socket.on('disconnect', () => {
-            console.log('user disconnected');
-        });
-        socket.on('chat message', async (msg, clientOffset, callback) => {
-            let result;
-            let userId, username;
-            try {
-                // Forcer le rechargement de la session avant chaque message
-                await new Promise((resolve) => {
-                    sessionMiddleware(socket.request, socket.request.res || {}, resolve);
-                });
-                
-                // Récupérer l'utilisateur depuis la session Socket.IO
-                const session = socket.request.session;
-                console.log('Session Socket.IO:', session); // Debug
-                
-                if (!session || !session.userId) {
-                    console.error('Session non trouvée ou utilisateur non connecté');
-                    console.log('Session disponible:', !!session);
-                    console.log('UserId dans session:', session?.userId);
-                    return;
-                }
-                
-                userId = session.userId;
-                username = session.username;
-                console.log('Utilisateur envoyant message:', { userId, username }); // Debug
-                
-                result = await db.run('INSERT INTO messages (content, client_offset, user_id) VALUES (?, ?, ?)', msg, clientOffset, userId);
-                
-                // Créer l'objet message à envoyer
-                const messageObject = {
-                    content: msg,
-                    username: username,
-                    userId: userId,
-                    id: result.lastID,
-                    timestamp: new Date().toISOString()
-                };
-                
-                console.log('Message à envoyer:', messageObject); // Debug
-                
-                // include the offset with the message and username
-                io.emit('chat message', messageObject);
-                // acknowledge the event
-                callback();
-            } catch (e) {
-                console.error('Erreur lors de l\'insertion du message:', e);
-                if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
-                    // the message was already inserted, so we notify the client
-                    callback();
-                } else {
-                    // nothing to do, just let the client retry
-                }
+app.get('/', requireAuth, (req, res) => {
+    res.sendFile(join(__dirname, 'src/index.html'));
+});
+
+// Socket.IO
+io.on('connection', async (socket) => {
+    socket.on('chat message', async (msg, clientOffset, callback) => {
+        try {
+            // Recharger la session avant chaque message
+            await new Promise((resolve) => {
+                sessionMiddleware(socket.request, socket.request.res || {}, resolve);
+            });
+            
+            const session = socket.request.session;
+            
+            if (!session || !session.userId) {
                 return;
             }
-        });
-        if (!socket.recovered) {
-            // if the connection state recovery was not successful
-            try {
-                await db.each(`SELECT m.id, m.content, m.timestamp, u.username, u.id as userId 
-                              FROM messages m 
-                              LEFT JOIN users u ON m.user_id = u.id 
-                              WHERE m.id > ?`,
-                    [socket.handshake.auth.serverOffset || 0],
-                    (_err, row) => {
-                        socket.emit('chat message', {
-                            content: row.content,
-                            username: row.username || 'Utilisateur',
-                            userId: row.userId,
-                            timestamp: row.timestamp || new Date().toISOString(),
-                            id: row.id
-                        }, row.id);
-                    }
-                )
-            } catch (e) {
-                // something went wrong
+            
+            const result = await db.run(
+                'INSERT INTO messages (content, client_offset, user_id) VALUES (?, ?, ?)', 
+                msg, clientOffset, session.userId
+            );
+            
+            const messageObject = {
+                content: msg,
+                username: session.username,
+                userId: session.userId,
+                id: result.lastID,
+                timestamp: new Date().toISOString()
+            };
+            
+            io.emit('chat message', messageObject);
+            callback();
+        } catch (e) {
+            if (e.errno === 19) {
+                callback();
             }
         }
     });
+    
+    // Récupérer les messages manqués
+    if (!socket.recovered) {
+        try {
+            await db.each(
+                `SELECT m.id, m.content, m.timestamp, u.username, u.id as userId 
+                 FROM messages m 
+                 LEFT JOIN users u ON m.user_id = u.id 
+                 WHERE m.id > ?`,
+                [socket.handshake.auth.serverOffset || 0],
+                (_err, row) => {
+                    socket.emit('chat message', {
+                        content: row.content,
+                        username: row.username || 'Utilisateur',
+                        userId: row.userId,
+                        timestamp: row.timestamp || new Date().toISOString(),
+                        id: row.id
+                    }, row.id);
+                }
+            );
+        } catch (e) {
+            // Erreur lors de la récupération des messages
+        }
+    }
+});
 
-
-    // Utiliser un port fixe
-    const port = process.env.PORT || 3000;
-    server.listen(port, () => {
-        console.log(`server running at http://localhost:${port}`);
-    });
-}
+// Démarrer le serveur
+const port = process.env.PORT || 3000;
+server.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});

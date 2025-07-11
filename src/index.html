@@ -438,38 +438,25 @@
             });
             // Réception des messages
             socket.on('chat message', (messageData, serverOffset) => {
-                let data;
-                if (typeof messageData === 'string') {
-                    data = {
-                        content: messageData,
-                        username: 'Utilisateur Ancien',
-                        timestamp: new Date().toISOString(),
-                        id: serverOffset
-                    };
-                } else {
-                    data = messageData;
-                }
-
-                console.log('Message reçu:', data);
+                const data = typeof messageData === 'string' ? {
+                    content: messageData,
+                    username: 'Utilisateur Ancien',
+                    timestamp: new Date().toISOString(),
+                    id: serverOffset
+                } : messageData;
 
                 const messageElement = createMessage(data);
                 messages.appendChild(messageElement);
                 scrollToBottom();
-
-                if (serverOffset) {
-                    localStorage.setItem('serverOffset', serverOffset);
-                }
             });
 
             // Indicateurs de connexion
             socket.on('connect', () => {
-                console.log('Connecté au serveur');
                 toggleButton.innerText = 'Déconnecter';
                 toggleButton.classList.remove('disconnect');
             });
 
             socket.on('disconnect', () => {
-                console.log('Déconnecté du serveur');
                 toggleButton.innerText = 'Connecter';
                 toggleButton.classList.add('disconnect');
             });
@@ -482,7 +469,6 @@
                         const userInfo = await response.json();
                         currentUserId = userInfo.userId;
                         currentUsername = userInfo.username;
-                        console.log('Utilisateur connecté:', userInfo);
                     }
                 } catch (error) {
                     console.error('Erreur lors du chargement des informations utilisateur:', error);
