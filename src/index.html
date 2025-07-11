@@ -281,7 +281,6 @@
         <div class="chat-header">
             <h1 class="chat-title">Chat RealTime</h1>
             <div class="header-buttons">
-                <button class="header-btn" id="toggle-btn">Déconnecter</button>
                 <button class="header-btn" id="logout-btn">Se déconnecter</button>
             </div>
         </div>
@@ -327,7 +326,6 @@
             const form = document.getElementById('form');
             const input = document.getElementById('input');
             const messages = document.getElementById('messages');
-            const toggleButton = document.getElementById('toggle-btn');
             const logoutButton = document.getElementById('logout-btn');
 
             // Fonction pour générer une couleur d'avatar basée sur le nom d'utilisateur
@@ -442,20 +440,6 @@
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
 
-            // Gestionnaire de connexion/déconnexion Socket.IO
-            toggleButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                if (socket.connected) {
-                    toggleButton.innerText = 'Connecter';
-                    toggleButton.classList.add('disconnect');
-                    socket.disconnect();
-                } else {
-                    toggleButton.innerText = 'Déconnecter';
-                    toggleButton.classList.remove('disconnect');
-                    socket.connect();
-                }
-            });
-
             // Gestionnaire de déconnexion utilisateur
             logoutButton.addEventListener('click', async (e) => {
                 e.preventDefault();
@@ -503,17 +487,6 @@
                 messages.appendChild(messageElement);
                 updateGroupTimeDisplay();
                 scrollToBottom();
-            });
-
-            // Indicateurs de connexion
-            socket.on('connect', () => {
-                toggleButton.innerText = 'Déconnecter';
-                toggleButton.classList.remove('disconnect');
-            });
-
-            socket.on('disconnect', () => {
-                toggleButton.innerText = 'Connecter';
-                toggleButton.classList.add('disconnect');
             });
 
             // Récupérer les informations utilisateur au chargement
