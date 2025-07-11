@@ -242,10 +242,8 @@
                     } else {
                         showSuccess('Connexion réussie ! Redirection vers le chat...');
                     }
-                    // Rediriger vers la page de chat après 2 secondes
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 2000);
+                    // Rediriger vers la page de chat immédiatement
+                    window.location.href = '/';
                 } else {
                     showError(data.message || 'Erreur lors de la connexion');
                 }
