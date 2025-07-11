@@ -430,18 +430,16 @@
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
                 if (input.value.trim()) {
-                    const clientOffset = `${socket.id}-${counter++}`;
+                    // Utiliser timestamp pour éviter les doublons lors des reconnexions
+                    const clientOffset = `${socket.id}-${counter++}-${Date.now()}`;
                     socket.emit('chat message', input.value.trim(), clientOffset);
                     input.value = '';
                 }
             });
-
             // Réception des messages
             socket.on('chat message', (messageData, serverOffset) => {
                 let data;
-                // Gérer les anciens messages (string) et les nouveaux (object)
                 if (typeof messageData === 'string') {
-                    // Ancien format - ne devrait plus arriver avec le nouveau serveur
                     data = {
                         content: messageData,
                         username: 'Utilisateur Ancien',
@@ -449,18 +447,17 @@
                         id: serverOffset
                     };
                 } else {
-                    // Nouveau format - objet avec toutes les propriétés
                     data = messageData;
                 }
-                
-                console.log('Message reçu:', data); // Debug
-                
+
+                console.log('Message reçu:', data);
+
                 const messageElement = createMessage(data);
                 messages.appendChild(messageElement);
                 scrollToBottom();
-                
+
                 if (serverOffset) {
-                    socket.auth.serverOffset = serverOffset;
+                    localStorage.setItem('serverOffset', serverOffset);
                 }
             });
 

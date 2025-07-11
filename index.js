@@ -14,7 +14,8 @@ import dotenv from 'dotenv';
 // Charger les variables d'environnement
 dotenv.config();
 
-if (cluster.isPrimary) {
+// Désactiver temporairement le clustering pour débugger la session
+if (false && cluster.isPrimary) {
     const numCPUs = availableParallelism();
     const basePort = parseInt(process.env.PORT) || 3000;
     // create one worker per available core
@@ -31,8 +32,8 @@ if (cluster.isPrimary) {
     const server = createServer(app);
     const sessionMiddleware = session({
         secret: process.env.SESSION_SECRET || 'fallback-secret-key-please-change-in-production',
-        resave: false,
-        saveUninitialized: false,
+        resave: true,  // Force resave pour Socket.IO
+        saveUninitialized: true,  // Force save pour Socket.IO
         cookie: {
             secure: process.env.COOKIE_SECURE === 'true', // true en production avec HTTPS
             httpOnly: process.env.COOKIE_HTTP_ONLY !== 'false', // true par défaut
@@ -41,14 +42,22 @@ if (cluster.isPrimary) {
     });
     
     const io = new Server(server,  {
-        connectionStateRecovery: {},
-        // set up the adapter on each worker thread
-        adapter: createAdapter()
+        connectionStateRecovery: {}
     });
     
     // Middleware pour partager les sessions entre Express et Socket.IO
     io.use((socket, next) => {
-        sessionMiddleware(socket.request, socket.request.res || {}, next);
+        // Créer un objet response factice complet pour le middleware de session
+        const res = {
+            getHeader: () => {},
+            setHeader: () => {},
+            clearCookie: () => {},
+            writeHead: () => {},
+            end: () => {},
+            cookie: () => {}
+        };
+        
+        sessionMiddleware(socket.request, res, next);
     });
     const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -167,6 +176,11 @@ if (cluster.isPrimary) {
             let result;
             let userId, username;
             try {
+                // Forcer le rechargement de la session avant chaque message
+                await new Promise((resolve) => {
+                    sessionMiddleware(socket.request, socket.request.res || {}, resolve);
+                });
+                
                 // Récupérer l'utilisateur depuis la session Socket.IO
                 const session = socket.request.session;
                 console.log('Session Socket.IO:', session); // Debug
@@ -183,6 +197,22 @@ if (cluster.isPrimary) {
                 console.log('Utilisateur envoyant message:', { userId, username }); // Debug
                 
                 result = await db.run('INSERT INTO messages (content, client_offset, user_id) VALUES (?, ?, ?)', msg, clientOffset, userId);
+                
+                // Créer l'objet message à envoyer
+                const messageObject = {
+                    content: msg,
+                    username: username,
+                    userId: userId,
+                    id: result.lastID,
+                    timestamp: new Date().toISOString()
+                };
+                
+                console.log('Message à envoyer:', messageObject); // Debug
+                
+                // include the offset with the message and username
+                io.emit('chat message', messageObject);
+                // acknowledge the event
+                callback();
             } catch (e) {
                 console.error('Erreur lors de l\'insertion du message:', e);
                 if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
@@ -193,22 +223,6 @@ if (cluster.isPrimary) {
                 }
                 return;
             }
-            
-            // Créer l'objet message à envoyer
-            const messageObject = {
-                content: msg,
-                username: username,
-                userId: userId,
-                id: result.lastID,
-                timestamp: new Date().toISOString()
-            };
-            
-            console.log('Message à envoyer:', messageObject); // Debug
-            
-            // include the offset with the message and username
-            io.emit('chat message', messageObject);
-            // acknowledge the event
-            callback();
         });
         if (!socket.recovered) {
             // if the connection state recovery was not successful
@@ -235,8 +249,8 @@ if (cluster.isPrimary) {
     });
 
 
-    // each worker will listen on a distinct port
-    const port = process.env.PORT;
+    // Utiliser un port fixe
+    const port = process.env.PORT || 3000;
     server.listen(port, () => {
         console.log(`server running at http://localhost:${port}`);
     });
