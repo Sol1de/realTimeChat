@@ -9,13 +9,18 @@ import { availableParallelism } from 'node:os';
 import cluster from 'node:cluster';
 import { createAdapter, setupPrimary } from '@socket.io/cluster-adapter';
 import session from 'express-session';
+import dotenv from 'dotenv';
+
+// Charger les variables d'environnement
+dotenv.config();
 
 if (cluster.isPrimary) {
     const numCPUs = availableParallelism();
+    const basePort = parseInt(process.env.PORT) || 3000;
     // create one worker per available core
     for (let i = 0; i < numCPUs; i++) {
         cluster.fork({
-            PORT: 3000 + i
+            PORT: basePort + i
         });
     }
 
@@ -33,7 +38,7 @@ if (cluster.isPrimary) {
 
     // open the database file
     const db = await open({
-        filename: 'chat.db',
+        filename: process.env.DATABASE_FILE || 'chat.db',
         driver: sqlite3.Database
     });
 
@@ -56,13 +61,13 @@ if (cluster.isPrimary) {
     
     // Configuration des sessions
     app.use(session({
-        secret: 'chat-secret-key-change-in-production',
+        secret: process.env.SESSION_SECRET || 'fallback-secret-key-please-change-in-production',
         resave: false,
         saveUninitialized: false,
         cookie: {
-            secure: false, // true en production avec HTTPS
-            httpOnly: true,
-            maxAge: 24 * 60 * 60 * 1000 // 24 heures
+            secure: process.env.COOKIE_SECURE === 'true', // true en production avec HTTPS
+            httpOnly: process.env.COOKIE_HTTP_ONLY !== 'false', // true par défaut
+            maxAge: parseInt(process.env.SESSION_MAX_AGE) || 24 * 60 * 60 * 1000 // 24 heures par défaut
         }
     }));
     
