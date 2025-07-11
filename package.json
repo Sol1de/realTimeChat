@@ -1,9 +1,10 @@
 {
-  "name": "real-time-chat",
+  "name": "socket-chat-example",
   "version": "0.0.1",
   "description": "my first socket.io app",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
   }
 }
